@@ -15,11 +15,11 @@ from bindsnet import encoding
 
 alldat = np.array([])
 for i in range(3):
-    alldat = np.hstack((alldat, np.load('Project/steinmetz_part%d.npz'%i, allow_pickle=True)['dat']))
+    alldat = np.hstack((alldat, np.load('../steinmetz_part%d.npz'%i, allow_pickle=True)['dat']))
 
 data = alldat[7]
 
-# Function Defination
+# Function Definition
 
 def location_index_extractor(location_index, area_name:str):
     """
@@ -43,13 +43,28 @@ def calculate_nodes_count(location_index, brain_groups, group_name):
         
     all_nodes_counts = np.sum(each_count_areas)
     
-    return all_nodes_counts 
+    return all_nodes_counts
+
+def extract_node_data(data, location_index, brain_group, group_name, trial):
+    node_data = []
+    waiting_to_extract = brain_groups[group_name]
+
+    for i in waiting_to_extract:
+        index = location_index_extractor(location_index, i)
+        foo = spikes[index, trial, :]
+
+        if len(foo) != 0:
+            node_data = [*node_data, *foo]
+
+    node_data = torch.from_numpy(np.squeeze(np.array(node_data), axis = 1))
+    return node_data
 
 # Parameters of network
 
 bins = data['bin_size']
 spikes = data['spks']
 location = data['brain_area']
+wheel = data['wheel']
 
 nodes_counts = len(np.unique(location))
 regions = ["vis ctx", "thal", "hipp", "other ctx", "midbrain", "basal ganglia", "cortical subplate", "other"]
@@ -65,13 +80,36 @@ brain_groups_keys = brain_groups.keys()
 
 ###### Building the Network ######
 
+## Init a network instance
 mice_snn = Network(dt = 1, learning = "Hebbian")
 
-visual_input = nodes.Input(n = calculate_nodes_count(location, brain_groups, "visual_cortex"))
-action = nodes.Input(n = 1)
+## Define the basic component
 
-mice_snn.add_layer(
-    layer = visual_input, name = "visual_cortex",
-    layer = action, name = "action"
-)
+# Nodes
+visual_input = nodes.Input(shape = (111, 250))
+action = nodes.Input(shape = (1,250))
+
+# Connections
+direct_connection = topology.Connection(source = visual_input, target = action)
+
+# Monitors
+M_visual_input = monitors.Monitor(obj = visual_input, state_vars = ['s'])
+M_action = monitors.Monitor(obj = action, state_vars = ['s'])
+M_connection = monitors.Monitor(obj = direct_connection, state_vars = ['w'])
+
+## Combine each components
+mice_snn.add_layer(layer = visual_input, name = "visual_cortex")
+mice_snn.add_layer(layer = action, name = "action")
+mice_snn.add_connection(connection = direct_connection, source = "visual_cortex", target = "action")
+mice_snn.add_monitor(monitor = M_visual_input, name = 'visual_input_monitor')
+mice_snn.add_monitor(monitor = M_action, name = "action_monitor")
+mice_snn.add_monitor(monitor = M_connection, name = 'connection_monitor')
+
+## Runing the network
+trial = 1
+visual_data = extract_node_data(data, location, brain_groups, "visual_cortex", trial = trial)
+action_data = torch.tensor(wheel[:, :, trial])
+inputs = {"visual_cortex": visual_data, "action" : action_data}
+
+mice_snn.run(inputs = inputs, time = 250)
 
