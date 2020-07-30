@@ -1,7 +1,10 @@
+
 ####### Setup #######
 
 # Importing Packages
 
+import os
+from os import name
 import torch
 import numpy as np
 import pandas as pd
@@ -13,7 +16,7 @@ from bindsnet import encoding
 
 alldat = np.array([])
 for i in range(3):
-    alldat = np.hstack((alldat, np.load('Project/steinmetz_part%d.npz'%i, allow_pickle=True)['dat']))
+    alldat = np.hstack((alldat, np.load('steinmetz_part%d.npz'%i, allow_pickle=True)['dat']))
 
 data = alldat[7]
 
@@ -24,7 +27,6 @@ def location_index_extractor(location_index, area_name:str):
     Args:
         location_index ([numpy.ndarry]): The dict of location
         area_name (str): The location you want to search
-
     Returns:
         np.array: The index of area name in location_index
     """
@@ -79,13 +81,13 @@ brain_groups_keys = brain_groups.keys()
 ###### Building the Network ######
 
 ## Init a network instance
-mice_snn = Network(dt = 1, learning = "STDP")
+mice_snn = Network(dt = 1, learning = "Hebbian")
 
 ## Define the basic component
 
 # Nodes
-visual_input = nodes.Input(n = 111)
-action = nodes.Input(n = 250)
+visual_input = nodes.Input(111)
+action = nodes.Input(250)
 
 # Connections
 direct_connection = topology.Connection(source = visual_input, target = action)
@@ -99,6 +101,7 @@ M_connection = monitors.Monitor(obj = direct_connection, state_vars = ['w'])
 mice_snn.add_layer(layer = visual_input, name = "visual_cortex")
 mice_snn.add_layer(layer = action, name = "action")
 mice_snn.add_connection(connection = direct_connection, source = "visual_cortex", target = "action")
+###########################
 mice_snn.add_monitor(monitor = M_visual_input, name = 'visual_input_monitor')
 mice_snn.add_monitor(monitor = M_action, name = "action_monitor")
 mice_snn.add_monitor(monitor = M_connection, name = 'connection_monitor')
@@ -108,7 +111,4 @@ trial = 1
 visual_data = extract_node_data(data, location, brain_groups, "visual_cortex", trial = trial)
 action_data = torch.tensor(np.tile(wheel[0, trial, :], [1, 111]).transpose())
 inputs = {"visual_cortex": visual_data, "action" : action_data}
-
 mice_snn.run(inputs = inputs, time = 250)
-
-connection_observation = M_connection.get('w')
